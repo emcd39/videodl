@@ -1,0 +1,130 @@
+name: Build and Release GUI EXE
+
+on:
+  schedule:
+    # 北京时间每天 00:00 (UTC 时间 16:00)
+    - cron: "0 16 * * *"
+  workflow_dispatch:  # 允许手动触发
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest  # 使用 Windows 环境打包 Windows exe
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      
+      - name: Install PyInstaller
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller
+      
+      - name: Install videodl dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install -r requirements_gui.txt
+          pip install -e .
+      
+      - name: Verify videodl installation
+        run: |
+          python -c "import videodl; print(f'videodl version: {videodl.__version__}')"
+          videodl --help
+      
+      - name: Build EXE with PyInstaller
+        run: |
+          pyinstaller --clean videodl_gui.spec
+      
+      - name: Verify EXE was created
+        run: |
+          if (Test-Path "dist\VideoDL_GUI.exe") {
+            Write-Host "EXE file created successfully"
+            Get-Item "dist\VideoDL_GUI.exe" | Select-Object Name, Length, LastWriteTime
+          } else {
+            Write-Error "EXE file not found!"
+            exit 1
+          }
+      
+      - name: Create release info
+        id: release_info
+        run: |
+          $version = python -c "import videodl; print(videodl.__version__)"
+          $date = Get-Date -Format "yyyy-MM-dd"
+          $tag = "v$version-gui-$date"
+          $releaseName = "VideoDL GUI v$version ($date)"
+          
+          echo "version=$version" >> $env:GITHUB_OUTPUT
+          echo "tag=$tag" >> $env:GITHUB_OUTPUT
+          echo "releaseName=$releaseName" >> $env:GITHUB_OUTPUT
+        shell: pwsh
+      
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.release_info.outputs.tag }}
+          name: ${{ steps.release_info.outputs.releaseName }}
+          body: |
+            ## VideoDL GUI 自动构建
+            
+            ### 📦 构建信息
+            - **版本**: ${{ steps.release_info.outputs.version }}
+            - **构建日期**: ${{ github.event.head_commit.timestamp }}
+            - **Python 版本**: 3.13
+            - **PyInstaller 版本**: 6.18.0
+            
+            ### 🚀 使用方法
+            1. 下载 `VideoDL_GUI.exe` 文件
+            2. 双击运行即可（无需安装 Python）
+            3. 首次运行可能需要点击"更多信息" → "仍要运行"
+            
+            ### 📋 功能特性
+            - 支持 60+ 视频平台解析
+            - CLI 子进程下载，显示实时进度
+            - 自定义下载目录
+            - 全中文界面
+            - 轻松取消下载（关闭 CLI 窗口）
+            
+            ### ⚠️ 注意事项
+            - 文件大小约 93 MB（包含所有依赖）
+            - 需要 Windows 7 或更高版本
+            - 首次运行可能被杀毒软件误报（正常现象）
+            
+            ### 📞 技术支持
+            - GitHub: https://github.com/CharlesPikachu/videodl
+            - 问题反馈: https://github.com/CharlesPikachu/videodl/issues
+            
+            ---
+            *此版本由 GitHub Actions 自动构建*
+          files: |
+            dist/VideoDL_GUI.exe
+          draft: false
+          prerelease: false
+          generate_release_notes: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: VideoDL-GUI-EXE
+          path: dist/VideoDL_GUI.exe
+          retention-days: 30
+      
+      - name: Build summary
+        run: |
+          echo "## ✅ 构建成功" >> $env:GITHUB_STEP_SUMMARY
+          echo "" >> $env:GITHUB_STEP_SUMMARY
+          echo "- **版本**: ${{ steps.release_info.outputs.version }}" >> $env:GITHUB_STEP_SUMMARY
+          echo "- **EXE 文件**: dist/VideoDL_GUI.exe" >> $env:GITHUB_STEP_SUMMARY
+          echo "- **发布标签**: ${{ steps.release_info.outputs.tag }}" >> $env:GITHUB_STEP_SUMMARY
+          echo "- **发布名称**: ${{ steps.release_info.outputs.releaseName }}" >> $env:GITHUB_STEP_SUMMARY
+          echo "" >> $env:GITHUB_STEP_SUMMARY
+          echo "### 📦 下载链接" >> $env:GITHUB_STEP_SUMMARY
+          echo "请查看 [Releases](https://github.com/CharlesPikachu/videodl/releases) 页面下载最新版本。" >> $env:GITHUB_STEP_SUMMARY
+        shell: pwsh
