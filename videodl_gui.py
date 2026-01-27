@@ -394,7 +394,37 @@ class VideoDLGUI(QMainWindow):
         if not url:
             QMessageBox.warning(self, "警告", "请输入视频链接")
             return
-            
+        
+        # 预处理微博短链接
+        original_url = url
+        if 't.cn/' in url:
+            self.log_message(f"检测到微博短链接，尝试获取真实 URL...")
+            try:
+                import requests
+                headers = {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36',
+                }
+                resp = requests.get(url, headers=headers, allow_redirects=True, timeout=10)
+                if resp.status_code == 200:
+                    # 检查重定向历史，找到视频页面 URL
+                    # 短链接会重定向到登录页面，但历史中包含视频页面 URL
+                    for history in resp.history:
+                        redirect_url = history.url
+                        # 查找包含 /tv/show/ 的 URL
+                        if '/tv/show/' in redirect_url:
+                            url = redirect_url
+                            self.log_message(f"✓ 短链接已重定向到: {url}")
+                            self.url_input.setText(url)  # 更新输入框显示
+                            break
+                    # 如果没有找到视频页面 URL，使用最后一个重定向
+                    if url == original_url and resp.history:
+                        url = resp.history[-1].url
+                        self.log_message(f"✓ 短链接已重定向到: {url}")
+                        self.url_input.setText(url)  # 更新输入框显示
+            except Exception as err:
+                self.log_message(f"✗ 短链接重定向失败: {str(err)}")
+                self.log_message("将尝试使用原链接解析...")
+        
         self.log_message(f"正在解析: {url}")
         self.parse_button.setEnabled(False)
         self.download_button.setEnabled(False)
